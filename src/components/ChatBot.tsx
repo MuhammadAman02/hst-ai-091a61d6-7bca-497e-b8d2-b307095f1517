@@ -4,6 +4,8 @@ import ChatHeader from "./ChatHeader";
 import ChatMessages from "./ChatMessages";
 import ChatInput from "./ChatInput";
 import { Message } from "@/types/chat";
+import { sendMessageToOpenAI, ChatMessage } from "@/lib/openai";
+import { toast } from "sonner";
 
 const ChatBot = () => {
   const [messages, setMessages] = useState<Message[]>([
@@ -32,46 +34,47 @@ const ChatBot = () => {
     setIsLoading(true);
 
     try {
-      // Here we'll call the OpenAI API
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          messages: [...messages, userMessage].map(msg => ({
-            role: msg.role,
-            content: msg.content,
-          })),
-        }),
-      });
+      // Convert messages to OpenAI format
+      const chatMessages: ChatMessage[] = [...messages, userMessage].map(msg => ({
+        role: msg.role,
+        content: msg.content,
+      }));
 
-      if (!response.ok) {
-        throw new Error("Failed to get response");
-      }
-
-      const data = await response.json();
-      console.log("Received AI response:", data);
+      // Call OpenAI API directly
+      const aiResponse = await sendMessageToOpenAI(chatMessages);
+      console.log("Received AI response:", aiResponse);
 
       const aiMessage: Message = {
         id: (Date.now() + 1).toString(),
-        content: data.message,
+        content: aiResponse,
         role: "assistant",
         timestamp: new Date(),
       };
 
       setMessages(prev => [...prev, aiMessage]);
+      toast.success("Message sent successfully!");
     } catch (error) {
       console.error("Error sending message:", error);
       
+      let errorContent = "Sorry, I'm having trouble connecting right now.";
+      
+      if (error instanceof Error) {
+        if (error.message.includes('API key not configured')) {
+          errorContent = "Please configure your OpenAI API key in the .env file (VITE_OPENAI_API_KEY).";
+        } else if (error.message.includes('OpenAI API error')) {
+          errorContent = "There was an error with the OpenAI API. Please check your API key and try again.";
+        }
+      }
+      
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
-        content: "Sorry, I'm having trouble connecting right now. Please make sure you've set up your OpenAI API key.",
+        content: errorContent,
         role: "assistant",
         timestamp: new Date(),
       };
 
       setMessages(prev => [...prev, errorMessage]);
+      toast.error("Failed to send message. Please try again.");
     } finally {
       setIsLoading(false);
     }
